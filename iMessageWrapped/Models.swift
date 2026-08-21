@@ -188,6 +188,21 @@ enum LeaderboardMetric: String, CaseIterable, Identifiable {
         case .reactionsPerMessage: "Reactions per message"
         }
     }
+
+    var helpText: String {
+        switch self {
+        case .messagesSent:
+            "Ranks participants by the number of messages they sent with the current filters."
+        case .reactionsReceived:
+            "Ranks participants by active reactions received on their messages."
+        case .reactionsGiven:
+            "Ranks participants by active reactions they added to messages."
+        case .messagesAndReactions:
+            "Ranks participants by messages sent plus reactions received."
+        case .reactionsPerMessage:
+            "Ranks participants by reactions received divided by eligible messages."
+        }
+    }
 }
 
 enum ReactionType: Int, CaseIterable, Identifiable, Sendable {
@@ -239,6 +254,133 @@ struct RawReactionEdge: Sendable {
     let giverHandle: String
     let receiverHandle: String
     let count: Int
+}
+
+struct RawMoverStats: Sendable {
+    let handle: String
+    let isCurrentUser: Bool
+    let messageCount: Int
+    let totalResponders: Int
+    let totalFollowUpMessages: Int
+}
+
+enum MoverResponseFilter: String, CaseIterable, Identifiable, Sendable {
+    case messages
+    case reactions
+    case both
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .messages: "Messages"
+        case .reactions: "Reactions"
+        case .both: "Both"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .messages: "message.fill"
+        case .reactions: "heart.fill"
+        case .both: "sparkles"
+        }
+    }
+
+    var helpText: String {
+        switch self {
+        case .messages:
+            "Counts people who send a normal follow-up message within the response window."
+        case .reactions:
+            "Counts people who add an active reaction directly to the trigger message within the response window."
+        case .both:
+            "Counts people who either message or react, without counting the same person twice for one trigger."
+        }
+    }
+}
+
+enum MoverResponderContext: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case newlyActivated
+    case alreadyActive
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .all: "All responders"
+        case .newlyActivated: "Newly activated"
+        case .alreadyActive: "Already active"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .all: "person.2.fill"
+        case .newlyActivated: "person.badge.plus"
+        case .alreadyActive: "bubble.left.and.bubble.right.fill"
+        }
+    }
+
+    var helpText: String {
+        switch self {
+        case .all:
+            "Includes every responder, whether or not they were already participating."
+        case .newlyActivated:
+            "Includes only responders who did not send a message during the lookback before the trigger."
+        case .alreadyActive:
+            "Includes only responders who sent a message during the lookback before the trigger."
+        }
+    }
+}
+
+enum MoverSortMetric: String, CaseIterable, Identifiable {
+    case peoplePerMessage
+    case followUpsPerMessage
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .peoplePerMessage: "People per message"
+        case .followUpsPerMessage: "Follow-ups per message"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .peoplePerMessage: "person.2.fill"
+        case .followUpsPerMessage: "bubble.left.and.bubble.right.fill"
+        }
+    }
+
+    var helpText: String {
+        switch self {
+        case .peoplePerMessage:
+            "Ranks by the average number of distinct other people who respond after each trigger message."
+        case .followUpsPerMessage:
+            "Ranks by the average number of follow-up messages sent by other people after each trigger message."
+        }
+    }
+}
+
+struct MoverLeaderboardEntry: Identifiable, Sendable {
+    let id: String
+    let displayName: String
+    let isCurrentUser: Bool
+    let messageCount: Int
+    let totalResponders: Int
+    let totalFollowUpMessages: Int
+
+    var averageResponders: Double {
+        guard messageCount > 0 else { return 0 }
+        return Double(totalResponders) / Double(messageCount)
+    }
+
+    var averageFollowUpMessages: Double {
+        guard messageCount > 0 else { return 0 }
+        return Double(totalFollowUpMessages) / Double(messageCount)
+    }
 }
 
 struct ReactionDynamicsEdge: Identifiable, Sendable {

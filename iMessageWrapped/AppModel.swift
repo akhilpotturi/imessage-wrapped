@@ -11,9 +11,11 @@ final class AppModel: ObservableObject {
     @Published var draftConversationFilters = ConversationFilters.defaultFilters
     @Published var senderOptions: [SenderFilterOption] = []
     @Published var selectedAnalytics: ConversationAnalytics?
+    @Published var moverEntries: [MoverLeaderboardEntry] = []
     @Published var isLoading = false
     @Published var isLeaderboardLoading = false
     @Published var isDynamicsLoading = false
+    @Published var isMoversLoading = false
     @Published var loadingMessage = "Reading your Messages"
     @Published var errorMessage: String?
     @Published var contactWarning: String?
@@ -22,6 +24,7 @@ final class AppModel: ObservableObject {
     private let contactResolver = ContactResolver()
     private var leaderboardFilterTask: Task<Void, Never>?
     private var dynamicsFilterTask: Task<Void, Never>?
+    private var moversTask: Task<Void, Never>?
 
     var directChats: [ConversationSummary] {
         conversations.filter { $0.kind == .direct }
@@ -105,6 +108,9 @@ final class AppModel: ObservableObject {
 
     func select(_ selection: SidebarSelection?) async {
         self.selection = selection
+        moversTask?.cancel()
+        moverEntries = []
+        isMoversLoading = false
         guard case .conversation = selection else {
             selectedAnalytics = nil
             return
@@ -149,6 +155,72 @@ final class AppModel: ObservableObject {
             await runDynamicsAnalysis(range: range, reactionType: reactionType)
             guard !Task.isCancelled else { return }
             isDynamicsLoading = false
+        }
+    }
+
+    func scheduleMoversAnalysis(
+        responseWindowSeconds: Int,
+        responseFilter: MoverResponseFilter,
+        responderContext: MoverResponderContext,
+        lookbackWindowMinutes: Int,
+        range: AnalyticsRange
+    ) {
+        moversTask?.cancel()
+        isMoversLoading = true
+        moversTask = Task {
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            await runMoversAnalysis(
+                responseWindowSeconds: responseWindowSeconds,
+                responseFilter: responseFilter,
+                responderContext: responderContext,
+                lookbackWindowMinutes: lookbackWindowMinutes,
+                range: range
+            )
+            guard !Task.isCancelled else { return }
+            isMoversLoading = false
+        }
+    }
+
+    private func runMoversAnalysis(
+        responseWindowSeconds: Int,
+        responseFilter: MoverResponseFilter,
+        responderContext: MoverResponderContext,
+        lookbackWindowMinutes: Int,
+        range: AnalyticsRange
+    ) async {
+        guard case .conversation(let id) = selection,
+              let summary = conversations.first(where: { $0.id == id }),
+              summary.kind == .group else {
+            moverEntries = []
+            return
+        }
+
+        do {
+            let stats = try await messageStore.loadMoverStats(
+                chatIDs: summary.chatIDs,
+                responseWindow: TimeInterval(responseWindowSeconds),
+                responseFilter: responseFilter,
+                responderContext: responderContext,
+                lookbackWindow: TimeInterval(lookbackWindowMinutes * 60),
+                since: range.startDate
+            )
+            do {
+                moverEntries = try await contactResolver.resolveMovers(stats)
+            } catch {
+                moverEntries = stats.map {
+                    MoverLeaderboardEntry(
+                        id: $0.isCurrentUser ? "current-user" : $0.handle,
+                        displayName: $0.isCurrentUser ? "You" : $0.handle,
+                        isCurrentUser: $0.isCurrentUser,
+                        messageCount: $0.messageCount,
+                        totalResponders: $0.totalResponders,
+                        totalFollowUpMessages: $0.totalFollowUpMessages
+                    )
+                }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

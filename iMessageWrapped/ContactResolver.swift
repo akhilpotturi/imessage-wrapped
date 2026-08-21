@@ -194,6 +194,41 @@ actor ContactResolver {
         return Array(merged.values)
     }
 
+    func resolveMovers(
+        _ stats: [RawMoverStats]
+    ) async throws -> [MoverLeaderboardEntry] {
+        try await ensureAccess()
+        try buildIndexIfNeeded()
+        let myName = try currentUserDisplayName()
+        var entries: [String: MoverLeaderboardEntry] = [:]
+
+        for stat in stats {
+            let identity = resolvedIdentity(for: stat.handle, myName: myName)
+            if let existing = entries[identity.id] {
+                entries[identity.id] = MoverLeaderboardEntry(
+                    id: identity.id,
+                    displayName: identity.name,
+                    isCurrentUser: stat.isCurrentUser,
+                    messageCount: existing.messageCount + stat.messageCount,
+                    totalResponders: existing.totalResponders + stat.totalResponders,
+                    totalFollowUpMessages: existing.totalFollowUpMessages
+                        + stat.totalFollowUpMessages
+                )
+            } else {
+                entries[identity.id] = MoverLeaderboardEntry(
+                    id: identity.id,
+                    displayName: identity.name,
+                    isCurrentUser: stat.isCurrentUser,
+                    messageCount: stat.messageCount,
+                    totalResponders: stat.totalResponders,
+                    totalFollowUpMessages: stat.totalFollowUpMessages
+                )
+            }
+        }
+
+        return Array(entries.values)
+    }
+
     private func resolvedIdentity(
         for handle: String,
         myName: String

@@ -133,6 +133,220 @@ actor MessageStore {
         }
     }
 
+    func loadMoverStats(
+        chatIDs: [Int64],
+        responseWindow: TimeInterval,
+        responseFilter: MoverResponseFilter,
+        responderContext: MoverResponderContext,
+        lookbackWindow: TimeInterval,
+        since startDate: Date?
+    ) throws -> [RawMoverStats] {
+        guard !chatIDs.isEmpty, responseWindow > 0, lookbackWindow > 0 else { return [] }
+
+        return try withDatabase { database in
+            let placeholders = chatIDs.indices.map { "?\($0 + 1)" }.joined(separator: ",")
+            let sql = """
+                SELECT
+                    m.date,
+                    m.is_from_me,
+                    CASE
+                        WHEN m.is_from_me = 1 THEN 'ME'
+                        ELSE COALESCE(h.id, 'Unknown')
+                    END,
+                    COALESCE(m.guid, ''),
+                    COALESCE(m.item_type, 0),
+                    COALESCE(m.associated_message_type, 0),
+                    COALESCE(m.associated_message_guid, '')
+                FROM chat_message_join cmj
+                JOIN message m ON m.ROWID = cmj.message_id
+                LEFT JOIN handle h ON h.ROWID = m.handle_id
+                WHERE cmj.chat_id IN (\(placeholders))
+                GROUP BY m.ROWID
+                ORDER BY m.date, m.ROWID
+                """
+            let statement = try prepare(sql, in: database)
+            defer { sqlite3_finalize(statement) }
+            for (index, chatID) in chatIDs.enumerated() {
+                sqlite3_bind_int64(statement, Int32(index + 1), chatID)
+            }
+
+            var events: [(
+                date: Date,
+                participant: String,
+                isCurrentUser: Bool,
+                guid: String,
+                itemType: Int,
+                associatedType: Int,
+                associatedGUID: String
+            )] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let date = appleDate(from: sqlite3_column_int64(statement, 0)) else {
+                    continue
+                }
+                let isCurrentUser = sqlite3_column_int(statement, 1) == 1
+                events.append(
+                    (
+                        date: date,
+                        participant: isCurrentUser ? "ME" : text(statement, column: 2),
+                        isCurrentUser: isCurrentUser,
+                        guid: text(statement, column: 3),
+                        itemType: Int(sqlite3_column_int(statement, 4)),
+                        associatedType: Int(sqlite3_column_int(statement, 5)),
+                        associatedGUID: text(statement, column: 6)
+                    )
+                )
+            }
+            try checkCompletion(of: statement, in: database)
+
+            let messages = events.filter { event in
+                event.itemType == 0
+                    && !((2000...2005).contains(event.associatedType)
+                        || (3000...3005).contains(event.associatedType))
+            }
+            var activeReactionDates: [ActiveReactionKey: [Date]] = [:]
+            for event in events {
+                let rawType = event.associatedType
+                guard (2000...2005).contains(rawType) || (3000...3005).contains(rawType)
+                else {
+                    continue
+                }
+                let targetGUID = event.associatedGUID.split(separator: "/").last.map(String.init)
+                    ?? event.associatedGUID
+                let typeValue = rawType >= 3000 ? rawType - 3000 : rawType - 2000
+                guard let type = ReactionType(rawValue: typeValue), !targetGUID.isEmpty else {
+                    continue
+                }
+                let key = ActiveReactionKey(
+                    targetGUID: targetGUID,
+                    type: type,
+                    giver: event.participant
+                )
+                if rawType >= 3000 {
+                    _ = activeReactionDates[key]?.popLast()
+                } else {
+                    activeReactionDates[key, default: []].append(event.date)
+                }
+            }
+            var reactionsByTarget: [String: [(participant: String, date: Date)]] = [:]
+            for (key, dates) in activeReactionDates {
+                for date in dates {
+                    reactionsByTarget[key.targetGUID, default: []].append(
+                        (participant: key.giver, date: date)
+                    )
+                }
+            }
+
+            var messageCounts: [String: Int] = [:]
+            var responderTotals: [String: Int] = [:]
+            var followUpMessageTotals: [String: Int] = [:]
+            var identities: [String: Bool] = [:]
+            var respondersInWindow: [String: Int] = [:]
+            var activeBefore: [String: Int] = [:]
+            var lookbackStart = 0
+            var windowEnd = min(1, messages.count)
+
+            for index in messages.indices {
+                let message = messages[index]
+                let lookbackCutoff = message.date.addingTimeInterval(-lookbackWindow)
+                while lookbackStart < index,
+                      messages[lookbackStart].date < lookbackCutoff {
+                    let participant = messages[lookbackStart].participant
+                    let remaining = activeBefore[participant, default: 0] - 1
+                    if remaining > 0 {
+                        activeBefore[participant] = remaining
+                    } else {
+                        activeBefore.removeValue(forKey: participant)
+                    }
+                    lookbackStart += 1
+                }
+
+                if windowEnd < index + 1 {
+                    windowEnd = index + 1
+                }
+
+                let cutoff = message.date.addingTimeInterval(responseWindow)
+                while windowEnd < messages.count, messages[windowEnd].date <= cutoff {
+                    respondersInWindow[messages[windowEnd].participant, default: 0] += 1
+                    windowEnd += 1
+                }
+
+                var responders: Set<String> = []
+                if responseFilter != .reactions {
+                    responders.formUnion(respondersInWindow.keys)
+                }
+                if responseFilter != .messages {
+                    let reactionResponders = reactionsByTarget[message.guid, default: []]
+                        .filter { $0.date >= message.date && $0.date <= cutoff }
+                        .map(\.participant)
+                    responders.formUnion(reactionResponders)
+                }
+                responders.remove(message.participant)
+                responders = Set(responders.filter {
+                    responderMatchesContext(
+                        $0,
+                        activeBefore: activeBefore,
+                        context: responderContext
+                    )
+                })
+
+                let isInRange = startDate.map { message.date >= $0 } ?? true
+                if isInRange {
+                    messageCounts[message.participant, default: 0] += 1
+                    responderTotals[message.participant, default: 0] += responders.count
+                    followUpMessageTotals[message.participant, default: 0] += respondersInWindow
+                        .filter {
+                            $0.key != message.participant
+                                && responderMatchesContext(
+                                    $0.key,
+                                    activeBefore: activeBefore,
+                                    context: responderContext
+                                )
+                        }
+                        .values
+                        .reduce(0, +)
+                    identities[message.participant] = message.isCurrentUser
+                }
+
+                let nextIndex = index + 1
+                if nextIndex < windowEnd {
+                    let nextParticipant = messages[nextIndex].participant
+                    let remaining = respondersInWindow[nextParticipant, default: 0] - 1
+                    if remaining > 0 {
+                        respondersInWindow[nextParticipant] = remaining
+                    } else {
+                        respondersInWindow.removeValue(forKey: nextParticipant)
+                    }
+                }
+                activeBefore[message.participant, default: 0] += 1
+            }
+
+            return messageCounts.map { participant, count in
+                RawMoverStats(
+                    handle: participant,
+                    isCurrentUser: identities[participant] ?? false,
+                    messageCount: count,
+                    totalResponders: responderTotals[participant, default: 0],
+                    totalFollowUpMessages: followUpMessageTotals[participant, default: 0]
+                )
+            }
+        }
+    }
+
+    private func responderMatchesContext(
+        _ participant: String,
+        activeBefore: [String: Int],
+        context: MoverResponderContext
+    ) -> Bool {
+        switch context {
+        case .all:
+            return true
+        case .newlyActivated:
+            return activeBefore[participant, default: 0] == 0
+        case .alreadyActive:
+            return activeBefore[participant, default: 0] > 0
+        }
+    }
+
     func loadConversations(since startDate: Date?) throws -> [ConversationSummary] {
         return try withDatabase { database in
             let availableColumns = try chatColumns(in: database)
