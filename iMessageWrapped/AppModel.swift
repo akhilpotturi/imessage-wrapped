@@ -12,12 +12,16 @@ final class AppModel: ObservableObject {
     @Published var senderOptions: [SenderFilterOption] = []
     @Published var selectedAnalytics: ConversationAnalytics?
     @Published var isLoading = false
+    @Published var isLeaderboardLoading = false
+    @Published var isDynamicsLoading = false
     @Published var loadingMessage = "Reading your Messages"
     @Published var errorMessage: String?
     @Published var contactWarning: String?
 
     private let messageStore = MessageStore(databaseURL: Permissions.messagesDBURL)
     private let contactResolver = ContactResolver()
+    private var leaderboardFilterTask: Task<Void, Never>?
+    private var dynamicsFilterTask: Task<Void, Never>?
 
     var directChats: [ConversationSummary] {
         conversations.filter { $0.kind == .direct }
@@ -118,16 +122,37 @@ final class AppModel: ObservableObject {
         draftConversationFilters != conversationFilters
     }
 
-    func runConversationAnalysis() async {
-        guard hasPendingConversationFilters else { return }
-        conversationFilters = draftConversationFilters
-        isLoading = true
-        loadingMessage = "Running your analysis"
-        defer { isLoading = false }
-        await loadSelectedConversation()
+    func scheduleConversationAnalysis(_ filters: ConversationFilters) {
+        draftConversationFilters = filters
+        leaderboardFilterTask?.cancel()
+        isLeaderboardLoading = true
+
+        leaderboardFilterTask = Task {
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            conversationFilters = filters
+            await loadSelectedConversation()
+            guard !Task.isCancelled else { return }
+            isLeaderboardLoading = false
+        }
     }
 
-    func runDynamicsAnalysis(
+    func scheduleDynamicsAnalysis(
+        range: AnalyticsRange,
+        reactionType: ReactionType
+    ) {
+        dynamicsFilterTask?.cancel()
+        isDynamicsLoading = true
+        dynamicsFilterTask = Task {
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            await runDynamicsAnalysis(range: range, reactionType: reactionType)
+            guard !Task.isCancelled else { return }
+            isDynamicsLoading = false
+        }
+    }
+
+    private func runDynamicsAnalysis(
         range: AnalyticsRange,
         reactionType: ReactionType
     ) async {
@@ -136,10 +161,6 @@ final class AppModel: ObservableObject {
               let analytics = selectedAnalytics else {
             return
         }
-
-        isLoading = true
-        loadingMessage = "Mapping reaction dynamics"
-        defer { isLoading = false }
 
         do {
             var filters = ConversationFilters.defaultFilters

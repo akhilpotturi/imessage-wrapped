@@ -70,6 +70,10 @@ struct ConversationDetailView: View {
                         ForEach(ReactionType.allCases) { type in
                             Button {
                                 dynamicsReactionType = type
+                                appModel.scheduleDynamicsAnalysis(
+                                    range: dynamicsRange,
+                                    reactionType: type
+                                )
                             } label: {
                                 if dynamicsReactionType == type {
                                     Label("\(type.symbol) \(type.title)", systemImage: "checkmark")
@@ -93,6 +97,10 @@ struct ConversationDetailView: View {
                     ForEach(AnalyticsRange.allCases) { range in
                         Button {
                             dynamicsRange = range
+                            appModel.scheduleDynamicsAnalysis(
+                                range: range,
+                                reactionType: dynamicsReactionType
+                            )
                         } label: {
                             Text(range.title)
                                 .font(.subheadline.bold())
@@ -111,24 +119,6 @@ struct ConversationDetailView: View {
                         }
                         .buttonStyle(.plain)
                     }
-
-                    Button {
-                        Task {
-                            await appModel.runDynamicsAnalysis(
-                                range: dynamicsRange,
-                                reactionType: dynamicsReactionType
-                            )
-                        }
-                    } label: {
-                        Label("Update map", systemImage: "arrow.clockwise")
-                            .font(.subheadline.bold())
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 11)
-                            .background(AppTheme.coolGradient, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(appModel.isLoading)
                 }
             }
         }
@@ -207,6 +197,11 @@ struct ConversationDetailView: View {
                         dynamicsGrid
                             .padding(.top, 8)
                     }
+                }
+            }
+            .overlay {
+                if appModel.isDynamicsLoading {
+                    SectionLoadingOverlay(title: "Updating dynamics")
                 }
             }
         }
@@ -439,37 +434,12 @@ struct ConversationDetailView: View {
                     reactionFilters
                 }
 
-                HStack {
-                    if appModel.hasPendingConversationFilters {
-                        Label("Changes ready", systemImage: "slider.horizontal.3")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(AppTheme.pink)
-                    } else {
-                        Text("Current results match these filters")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Button {
-                        Task {
-                            await appModel.runConversationAnalysis()
-                        }
-                    } label: {
-                        Label("Run analysis", systemImage: "play.fill")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 11)
-                            .background(AppTheme.heroGradient, in: Capsule())
-                            .shadow(color: AppTheme.pink.opacity(0.22), radius: 12, y: 5)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!appModel.hasPendingConversationFilters || appModel.isLoading)
-                    .opacity(appModel.hasPendingConversationFilters ? 1 : 0.45)
-                }
-                .padding(.top, 2)
+                Label(
+                    "Results update automatically",
+                    systemImage: "arrow.triangle.2.circlepath"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
             }
         }
     }
@@ -567,6 +537,11 @@ struct ConversationDetailView: View {
                         }
                     }
                 }
+            }
+        }
+        .overlay {
+            if appModel.isLeaderboardLoading {
+                SectionLoadingOverlay(title: "Updating leaderboard")
             }
         }
     }
@@ -877,13 +852,58 @@ struct ConversationDetailView: View {
     private func updateFilters(_ update: (inout ConversationFilters) -> Void) {
         var filters = appModel.draftConversationFilters
         update(&filters)
-        appModel.draftConversationFilters = filters
+        appModel.scheduleConversationAnalysis(filters)
     }
 }
 
 private struct DynamicsPerson: Identifiable {
     let id: String
     let name: String
+}
+
+private struct SectionLoadingOverlay: View {
+    let title: String
+    @State private var isPulsing = false
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 22)
+                .fill(.ultraThinMaterial)
+
+            VStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .stroke(AppTheme.pink.opacity(0.3), lineWidth: 3)
+                        .frame(width: 58, height: 58)
+                        .scaleEffect(isPulsing ? 1.55 : 0.75)
+                        .opacity(isPulsing ? 0 : 1)
+                        .animation(
+                            .easeOut(duration: 1.1).repeatForever(autoreverses: false),
+                            value: isPulsing
+                        )
+
+                    Image(systemName: "sparkles")
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+                        .frame(width: 54, height: 54)
+                        .background(AppTheme.heroGradient, in: Circle())
+                        .scaleEffect(isPulsing ? 1.05 : 0.95)
+                        .animation(
+                            .easeInOut(duration: 0.65).repeatForever(autoreverses: true),
+                            value: isPulsing
+                        )
+                }
+
+                Text(title)
+                    .font(.headline)
+            }
+            .padding(24)
+        }
+        .onAppear {
+            isPulsing = true
+        }
+        .transition(.opacity)
+    }
 }
 
 private struct ReactionHeatCell: View {
