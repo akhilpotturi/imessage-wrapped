@@ -12,10 +12,15 @@ final class AppModel: ObservableObject {
     @Published var senderOptions: [SenderFilterOption] = []
     @Published var selectedAnalytics: ConversationAnalytics?
     @Published var moverEntries: [MoverLeaderboardEntry] = []
+    @Published var messageHighlights: [MessageHighlight] = []
+    @Published var messageContext: [MessageContextEntry] = []
+    @Published var selectedContextMessageID: Int64?
     @Published var isLoading = false
     @Published var isLeaderboardLoading = false
     @Published var isDynamicsLoading = false
     @Published var isMoversLoading = false
+    @Published var isMessageHighlightsLoading = false
+    @Published var isMessageContextLoading = false
     @Published var loadingMessage = "Reading your Messages"
     @Published var errorMessage: String?
     @Published var contactWarning: String?
@@ -25,6 +30,8 @@ final class AppModel: ObservableObject {
     private var leaderboardFilterTask: Task<Void, Never>?
     private var dynamicsFilterTask: Task<Void, Never>?
     private var moversTask: Task<Void, Never>?
+    private var messageHighlightsTask: Task<Void, Never>?
+    private var messageContextTask: Task<Void, Never>?
 
     var directChats: [ConversationSummary] {
         conversations.filter { $0.kind == .direct }
@@ -109,8 +116,15 @@ final class AppModel: ObservableObject {
     func select(_ selection: SidebarSelection?) async {
         self.selection = selection
         moversTask?.cancel()
+        messageHighlightsTask?.cancel()
+        messageContextTask?.cancel()
         moverEntries = []
+        messageHighlights = []
+        messageContext = []
+        selectedContextMessageID = nil
         isMoversLoading = false
+        isMessageHighlightsLoading = false
+        isMessageContextLoading = false
         guard case .conversation = selection else {
             selectedAnalytics = nil
             return
@@ -180,6 +194,105 @@ final class AppModel: ObservableObject {
             guard !Task.isCancelled else { return }
             isMoversLoading = false
         }
+    }
+
+    func scheduleMessageHighlightsAnalysis(range: AnalyticsRange) {
+        messageHighlightsTask?.cancel()
+        isMessageHighlightsLoading = true
+        messageHighlightsTask = Task {
+            guard case .conversation(let id) = selection,
+                  let summary = conversations.first(where: { $0.id == id }) else {
+                messageHighlights = []
+                isMessageHighlightsLoading = false
+                return
+            }
+
+            do {
+                let rawHighlights = try await messageStore.loadMessageHighlights(
+                    chatIDs: summary.chatIDs,
+                    since: range.startDate
+                )
+                guard !Task.isCancelled else { return }
+                do {
+                    messageHighlights = try await contactResolver.resolveMessageHighlights(
+                        rawHighlights
+                    )
+                } catch {
+                    messageHighlights = rawHighlights.map {
+                        MessageHighlight(
+                            id: $0.id,
+                            senderName: $0.isCurrentUser ? "You" : $0.senderHandle,
+                            isCurrentUser: $0.isCurrentUser,
+                            text: $0.text,
+                            date: $0.date,
+                            reactionsByType: $0.reactionsByType,
+                            attachments: $0.attachments
+                        )
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                isMessageHighlightsLoading = false
+            } catch {
+                guard !Task.isCancelled else { return }
+                errorMessage = error.localizedDescription
+                isMessageHighlightsLoading = false
+            }
+        }
+    }
+
+    func showMessageContext(messageID: Int64) {
+        if selectedContextMessageID == messageID {
+            clearMessageContext()
+            return
+        }
+        messageContextTask?.cancel()
+        selectedContextMessageID = messageID
+        messageContext = []
+        isMessageContextLoading = true
+
+        messageContextTask = Task {
+            guard case .conversation(let id) = selection,
+                  let summary = conversations.first(where: { $0.id == id }) else {
+                clearMessageContext()
+                return
+            }
+
+            do {
+                let rawContext = try await messageStore.loadMessageContext(
+                    chatIDs: summary.chatIDs,
+                    around: messageID,
+                    radius: 5
+                )
+                guard !Task.isCancelled else { return }
+                do {
+                    messageContext = try await contactResolver.resolveMessageContext(rawContext)
+                } catch {
+                    messageContext = rawContext.map {
+                        MessageContextEntry(
+                            id: $0.id,
+                            senderName: $0.isCurrentUser ? "You" : $0.senderHandle,
+                            isCurrentUser: $0.isCurrentUser,
+                            text: $0.text,
+                            date: $0.date,
+                            attachments: $0.attachments
+                        )
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                isMessageContextLoading = false
+            } catch {
+                guard !Task.isCancelled else { return }
+                errorMessage = error.localizedDescription
+                isMessageContextLoading = false
+            }
+        }
+    }
+
+    func clearMessageContext() {
+        messageContextTask?.cancel()
+        selectedContextMessageID = nil
+        messageContext = []
+        isMessageContextLoading = false
     }
 
     private func runMoversAnalysis(

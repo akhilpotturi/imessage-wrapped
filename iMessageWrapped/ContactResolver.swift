@@ -229,6 +229,47 @@ actor ContactResolver {
         return Array(entries.values)
     }
 
+    func resolveMessageHighlights(
+        _ highlights: [RawMessageHighlight]
+    ) async throws -> [MessageHighlight] {
+        try await ensureAccess()
+        try buildIndexIfNeeded()
+        let myName = try currentUserDisplayName()
+
+        return highlights.map { highlight in
+            let identity = resolvedIdentity(for: highlight.senderHandle, myName: myName)
+            return MessageHighlight(
+                id: highlight.id,
+                senderName: identity.name,
+                isCurrentUser: highlight.isCurrentUser,
+                text: highlight.text,
+                date: highlight.date,
+                reactionsByType: highlight.reactionsByType,
+                attachments: highlight.attachments
+            )
+        }
+    }
+
+    func resolveMessageContext(
+        _ entries: [RawMessageContextEntry]
+    ) async throws -> [MessageContextEntry] {
+        try await ensureAccess()
+        try buildIndexIfNeeded()
+        let myName = try currentUserDisplayName()
+
+        return entries.map { entry in
+            let identity = resolvedIdentity(for: entry.senderHandle, myName: myName)
+            return MessageContextEntry(
+                id: entry.id,
+                senderName: identity.name,
+                isCurrentUser: entry.isCurrentUser,
+                text: entry.text,
+                date: entry.date,
+                attachments: entry.attachments
+            )
+        }
+    }
+
     private func resolvedIdentity(
         for handle: String,
         myName: String

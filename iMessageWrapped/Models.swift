@@ -383,6 +383,61 @@ struct MoverLeaderboardEntry: Identifiable, Sendable {
     }
 }
 
+struct RawMessageHighlight: Sendable {
+    let id: Int64
+    let senderHandle: String
+    let isCurrentUser: Bool
+    let text: String
+    let date: Date
+    let reactionsByType: [ReactionType: Int]
+    let attachments: [MessageAttachment]
+}
+
+struct MessageAttachment: Identifiable, Sendable {
+    let id: Int64
+    let guid: String
+    let fileURL: URL?
+    let displayName: String
+    let mimeType: String
+    let messageDate: Date
+}
+
+struct MessageHighlight: Identifiable, Sendable {
+    let id: Int64
+    let senderName: String
+    let isCurrentUser: Bool
+    let text: String
+    let date: Date
+    let reactionsByType: [ReactionType: Int]
+    let attachments: [MessageAttachment]
+
+    var totalReactions: Int {
+        reactionsByType.values.reduce(0, +)
+    }
+
+    func reactionCount(for type: ReactionType) -> Int {
+        type == .all ? totalReactions : reactionsByType[type, default: 0]
+    }
+}
+
+struct RawMessageContextEntry: Sendable {
+    let id: Int64
+    let senderHandle: String
+    let isCurrentUser: Bool
+    let text: String
+    let date: Date
+    let attachments: [MessageAttachment]
+}
+
+struct MessageContextEntry: Identifiable, Sendable {
+    let id: Int64
+    let senderName: String
+    let isCurrentUser: Bool
+    let text: String
+    let date: Date
+    let attachments: [MessageAttachment]
+}
+
 struct ReactionDynamicsEdge: Identifiable, Sendable {
     let giverID: String
     let giverName: String

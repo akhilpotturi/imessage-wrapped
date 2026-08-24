@@ -256,6 +256,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSContactsUsageDescription = "iMessage Wrapped uses Contacts to replace message phone numbers and email addresses with names.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "iMessage Wrapped uses Photos to locate message attachments you previously saved.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -287,6 +288,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSContactsUsageDescription = "iMessage Wrapped uses Contacts to replace message phone numbers and email addresses with names.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "iMessage Wrapped uses Photos to locate message attachments you previously saved.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
