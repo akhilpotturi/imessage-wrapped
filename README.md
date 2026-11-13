@@ -35,3 +35,13 @@ Store sandbox.
 Open `iMessageWrapped.xcodeproj` in Xcode and run the `iMessageWrapped` scheme.
 Grant the built app Full Disk Access when prompted by the onboarding screen,
 then relaunch it.
+
+Run the tests with ⌘U in Xcode, or:
+
+```sh
+xcodebuild test -project iMessageWrapped.xcodeproj -scheme iMessageWrapped -destination 'platform=macOS'
+```
+
+Tests run against a small synthetic `chat.db` built in
+`iMessageWrappedTests/MessagesFixture.swift`; they never touch your real
+Messages data.
