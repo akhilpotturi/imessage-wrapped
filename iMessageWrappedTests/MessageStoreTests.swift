@@ -367,3 +367,36 @@ typealias Chat = MessagesFixture.Chat
         #expect(await store.appleDate(from: MessagesFixture.appleNanoseconds(date)) == date)
     }
 }
+
+// MARK: - Time ranges
+
+@MainActor
+@Suite struct AnalyticsRangeTests {
+    @Test func pickerOrderRunsShortestToLongest() {
+        #expect(AnalyticsRange.allCases == [
+            .sevenDays, .thirtyDays, .sixMonths, .oneYear, .yearToDate, .allTime,
+        ])
+    }
+
+    @Test func sevenDaysStartsOneWeekAgo() throws {
+        let start = try #require(AnalyticsRange.sevenDays.startDate)
+        let expected = try #require(Calendar.current.date(byAdding: .day, value: -7, to: .now))
+
+        #expect(abs(start.timeIntervalSince(expected)) < 5)
+    }
+
+    @Test func yearToDateStartsJanuaryFirstOfThisYear() throws {
+        let start = try #require(AnalyticsRange.yearToDate.startDate)
+        let calendar = Calendar.current
+        let thisYear = calendar.component(.year, from: .now)
+
+        #expect(calendar.dateComponents([.year, .month, .day, .hour, .minute], from: start)
+            == DateComponents(year: thisYear, month: 1, day: 1, hour: 0, minute: 0))
+        #expect(AnalyticsRange.yearToDate.title == String(thisYear))
+        #expect(AnalyticsRange.yearToDate.periodDescription == "\(thisYear) so far")
+    }
+
+    @Test func allTimeHasNoStartDate() {
+        #expect(AnalyticsRange.allTime.startDate == nil)
+    }
+}

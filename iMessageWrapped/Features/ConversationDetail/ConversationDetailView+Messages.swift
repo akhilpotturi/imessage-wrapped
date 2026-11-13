@@ -38,6 +38,8 @@ extension ConversationDetailView {
                                 refreshMessageHighlights()
                             } label: {
                                 Text(range.title)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
                                     .font(.subheadline.bold())
                                     .foregroundStyle(
                                         messageHighlightsRange == range
@@ -58,7 +60,7 @@ extension ConversationDetailView {
                             }
                             .buttonStyle(.plain)
                             .help(
-                                "Show messages sent during the last \(range.title.lowercased())."
+                                "Show messages sent during \(range.periodDescription)."
                             )
                         }
                     }

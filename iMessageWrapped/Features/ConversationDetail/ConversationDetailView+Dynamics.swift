@@ -53,6 +53,8 @@ extension ConversationDetailView {
                             )
                         } label: {
                             Text(range.title)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                                 .font(.subheadline.bold())
                                 .foregroundStyle(dynamicsRange == range ? .white : AppTheme.purple)
                                 .frame(maxWidth: .infinity)

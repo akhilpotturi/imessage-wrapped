@@ -44,7 +44,7 @@ extension ConversationDetailView {
                                 refreshMovers()
                             }
                             .help(
-                                "Use trigger messages sent during the last \(range.title.lowercased())."
+                                "Use trigger messages sent during \(range.periodDescription)."
                             )
                         }
                     }

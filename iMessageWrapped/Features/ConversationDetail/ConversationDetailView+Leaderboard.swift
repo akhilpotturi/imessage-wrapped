@@ -34,6 +34,8 @@ extension ConversationDetailView {
                             updateFilters { $0.range = range }
                         } label: {
                             Text(range.title)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                                 .font(.subheadline.weight(.bold))
                                 .foregroundStyle(
                                     appModel.draftConversationFilters.range == range
@@ -54,7 +56,7 @@ extension ConversationDetailView {
                         }
                         .buttonStyle(.plain)
                         .help(
-                            "Limits leaderboard activity to the last \(range.title.lowercased())."
+                            "Limits leaderboard activity to \(range.periodDescription)."
                         )
                     }
                 }

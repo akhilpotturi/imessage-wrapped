@@ -1,31 +1,55 @@
 import Foundation
 
 enum AnalyticsRange: String, CaseIterable, Identifiable, Sendable {
+    case sevenDays
     case thirtyDays
     case sixMonths
     case oneYear
+    case yearToDate
     case allTime
 
     var id: Self { self }
 
     var title: String {
         switch self {
+        case .sevenDays: "7 days"
         case .thirtyDays: "30 days"
         case .sixMonths: "6 months"
         case .oneYear: "1 year"
+        case .yearToDate: String(Self.currentYear)
         case .allTime: "All time"
         }
+    }
+
+    /// Reads naturally after "during" or "to", e.g. "sent during the last 7 days".
+    var periodDescription: String {
+        switch self {
+        case .sevenDays: "the last 7 days"
+        case .thirtyDays: "the last 30 days"
+        case .sixMonths: "the last 6 months"
+        case .oneYear: "the last year"
+        case .yearToDate: "\(Self.currentYear) so far"
+        case .allTime: "all of your history"
+        }
+    }
+
+    private static var currentYear: Int {
+        Calendar.current.component(.year, from: .now)
     }
 
     nonisolated var startDate: Date? {
         let calendar = Calendar.current
         switch self {
+        case .sevenDays:
+            return calendar.date(byAdding: .day, value: -7, to: .now)
         case .thirtyDays:
             return calendar.date(byAdding: .day, value: -30, to: .now)
         case .sixMonths:
             return calendar.date(byAdding: .month, value: -6, to: .now)
         case .oneYear:
             return calendar.date(byAdding: .year, value: -1, to: .now)
+        case .yearToDate:
+            return calendar.dateInterval(of: .year, for: .now)?.start
         case .allTime:
             return nil
         }
